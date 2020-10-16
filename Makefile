@@ -24,7 +24,8 @@ run_server: server
 
 # Run with superuser:
 # $ sudo make show_syslog
-# Probably works on my PC only, because syslog file may be vary on vary distros
+# Probably works on my PC only, because syslog file may be varyous on vary
+# distros
 show_syslog:
 	cat /var/log/syslog
 
