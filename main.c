@@ -6,10 +6,11 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include "common.h"
+
 #define SYSLOG_PRINT_ITERATIONS_COUNT 10
 #define SYSLOG_PRINT_DELAY_US         320000
 #define UDP_HELLO_SERVER_ADDRESS      "127.0.0.1"
-#define UDP_HELLO_PORT                "4567"
 #define UDP_HELLO_MESSAGE             "hello"
 #define UDP_HELLO_TIMEOUT_SEC         3
 #define UDP_HELLO_TIMEOUT_MSEC        0
@@ -60,12 +61,48 @@ bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
     return true;
 }
 
+bool ReadWithTimeout(int sockFd, struct addrinfo *servinfo) {
+    struct timeval timeout;
+    fd_set         readFds;
+    fd_set         masterFds;
+
+    timeout.tv_sec = UDP_HELLO_TIMEOUT_SEC;
+    timeout.tv_usec = UDP_HELLO_TIMEOUT_MSEC;
+
+    FD_ZERO(&masterFds);
+    FD_SET(sockFd, &masterFds);
+
+    memcpy(&readFds, &masterFds, sizeof(fd_set));
+
+    if (select(sockFd + 1, &readFds, NULL, NULL, &timeout) < 0) {
+        perror("select");
+        return false;
+    }
+
+    openlog ("test_task_for_radiofid", LOG_CONS, LOG_USER);
+
+    if (FD_ISSET(sockFd, &readFds)) {
+        char    recvBuffer[UDP_HELLO_RECV_BUFFER_LEN];
+        ssize_t receivedLen;
+
+        receivedLen = recvfrom(sockFd, recvBuffer, UDP_HELLO_RECV_BUFFER_LEN, 0,
+         servinfo->ai_addr, &servinfo->ai_addrlen);
+        recvBuffer[receivedLen] = '\0';
+
+        syslog(LOG_INFO, "thread-2: recieved: %s\n", recvBuffer);
+    } else {
+        syslog(LOG_ERR, "%s", "thread-2: recv failed\n");
+    }
+
+    closelog();
+
+    return true;
+}
+
 void *UdpHello(void *unused) {
     struct addrinfo *servinfo;
     int              sockFd;
     ssize_t          sendToResult;
-    // struct timeval   timeout;
-    // fd_set readfds, masterfds;
 
     if (!PrepareSocket(&sockFd, &servinfo)) {
         perror("PrepareSocket");
@@ -80,8 +117,9 @@ void *UdpHello(void *unused) {
         return NULL;
     }
 
-    // timeout.tv_sec = 3;
-    // timeout.tv_usec = 0;
+    ReadWithTimeout(sockFd, servinfo);
+
+    freeaddrinfo(servinfo);
 
     return NULL;
 }
