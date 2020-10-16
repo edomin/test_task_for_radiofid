@@ -124,13 +124,22 @@ void *UdpHello(void *unused) {
     return NULL;
 }
 
-int main(int argc, char **argv) {
-    // pthread_t thread1;
-    // pthread_t thread2;
-    // pthread_t thread3;
+void *Empty(void *unused) {
+    return NULL;
+}
 
-    // SyslogPrintInfoIterative(NULL);
-    UdpHello(NULL);
+int main(int argc, char **argv) {
+    pthread_t threadSyslogInfoIterative;
+    pthread_t threadUdpHello;
+    pthread_t threadEmpty;
+
+    pthread_create(&threadSyslogInfoIterative, NULL, SyslogPrintInfoIterative, NULL);
+    pthread_create(&threadUdpHello, NULL, UdpHello, NULL);
+    pthread_create(&threadEmpty, NULL, Empty, NULL);
+
+    pthread_join(threadSyslogInfoIterative, NULL);
+    pthread_join(threadUdpHello, NULL);
+    pthread_join(threadEmpty, NULL);
 
     fprintf(stderr, "%s", "app finished\n");
 
