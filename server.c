@@ -14,7 +14,7 @@ bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
 
     memset(&hints, 0, sizeof(struct addrinfo));
 
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
     hints.ai_flags = AI_PASSIVE;

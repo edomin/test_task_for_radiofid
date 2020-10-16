@@ -34,7 +34,7 @@ bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
 
     memset(&hints, 0, sizeof(struct addrinfo));
 
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
 
@@ -133,7 +133,8 @@ int main(int argc, char **argv) {
     pthread_t threadUdpHello;
     pthread_t threadEmpty;
 
-    pthread_create(&threadSyslogInfoIterative, NULL, SyslogPrintInfoIterative, NULL);
+    pthread_create(&threadSyslogInfoIterative, NULL, SyslogPrintInfoIterative,
+     NULL);
     pthread_create(&threadUdpHello, NULL, UdpHello, NULL);
     pthread_create(&threadEmpty, NULL, Empty, NULL);
 
