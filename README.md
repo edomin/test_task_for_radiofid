@@ -1,7 +1,7 @@
-#What is this
+# What is this
 Some random test task. Just skip this repo.
 
-#Task
+# Task
 приложение на С.
 
 * запускаемся, содаем 3 потока.
@@ -22,5 +22,5 @@ Some random test task. Just skip this repo.
 
 "серверную" часть для потока-2 можно сделать так "nc -lnu -p 4567" (короче просто неткатом слушать порт)
 
-#Copying
+# Copying
 License - CC0.
