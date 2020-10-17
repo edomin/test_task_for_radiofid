@@ -12,18 +12,13 @@
 #define SYSLOG_PRINT_DELAY_US         320000
 #define UDP_HELLO_SERVER_ADDRESS      "127.0.0.1"
 #define UDP_HELLO_MESSAGE             "hello"
-#define UDP_HELLO_TIMEOUT_SEC         3
-#define UDP_HELLO_TIMEOUT_MSEC        0
+#define UDP_HELLO_TIMEOUT_MS          3000
 
 void *SyslogPrintInfoIterative(void *unused) {
-    openlog ("test_task_for_radiofid", LOG_CONS, LOG_USER);
-
     for (int iterNum = 0; iterNum < SYSLOG_PRINT_ITERATIONS_COUNT; iterNum++) {
         usleep(SYSLOG_PRINT_DELAY_US);
         syslog(LOG_INFO, "thread-1: step %i\n", iterNum);
     }
-
-    closelog();
 
     return NULL;
 }
@@ -61,42 +56,20 @@ bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
     return true;
 }
 
-bool ReadWithTimeout(int sockFd, struct addrinfo *servinfo) {
-    struct timeval timeout;
-    fd_set         readFds;
-    fd_set         masterFds;
+void OnReadyToRecvFromServer(int fd, void *servinfo) {
+    char             recvBuffer[UDP_HELLO_RECV_BUFFER_LEN];
+    ssize_t          receivedLen;
+    struct addrinfo *pServinfo = (struct addrinfo *)servinfo;
 
-    timeout.tv_sec = UDP_HELLO_TIMEOUT_SEC;
-    timeout.tv_usec = UDP_HELLO_TIMEOUT_MSEC;
+    receivedLen = recvfrom(fd, recvBuffer, UDP_HELLO_RECV_BUFFER_LEN, 0,
+     pServinfo->ai_addr, &pServinfo->ai_addrlen);
+    recvBuffer[receivedLen] = '\0';
 
-    FD_ZERO(&masterFds);
-    FD_SET(sockFd, &masterFds);
+    syslog(LOG_INFO, "thread-2: recieved: %s\n", recvBuffer);
+}
 
-    memcpy(&readFds, &masterFds, sizeof(fd_set));
-
-    if (select(sockFd + 1, &readFds, NULL, NULL, &timeout) < 0) {
-        perror("select");
-        return false;
-    }
-
-    openlog ("test_task_for_radiofid", LOG_CONS, LOG_USER);
-
-    if (FD_ISSET(sockFd, &readFds)) {
-        char    recvBuffer[UDP_HELLO_RECV_BUFFER_LEN];
-        ssize_t receivedLen;
-
-        receivedLen = recvfrom(sockFd, recvBuffer, UDP_HELLO_RECV_BUFFER_LEN, 0,
-         servinfo->ai_addr, &servinfo->ai_addrlen);
-        recvBuffer[receivedLen] = '\0';
-
-        syslog(LOG_INFO, "thread-2: recieved: %s\n", recvBuffer);
-    } else {
-        syslog(LOG_ERR, "%s", "thread-2: recv failed\n");
-    }
-
-    closelog();
-
-    return true;
+void OnTimeoutToRecvFromServer(void) {
+    syslog(LOG_ERR, "%s", "thread-2: recv failed\n");
 }
 
 void *UdpHello(void *unused) {
@@ -117,7 +90,9 @@ void *UdpHello(void *unused) {
         return NULL;
     }
 
-    ReadWithTimeout(sockFd, servinfo);
+    WaitInputAndDo(sockFd, UDP_HELLO_TIMEOUT_MS, OnReadyToRecvFromServer,
+     sockFd, servinfo, OnTimeoutToRecvFromServer);
+    close(sockFd);
 
     freeaddrinfo(servinfo);
 
@@ -133,6 +108,8 @@ int main(int argc, char **argv) {
     pthread_t threadUdpHello;
     pthread_t threadEmpty;
 
+    openlog("test_task_for_radiofid", LOG_CONS, LOG_USER);
+
     pthread_create(&threadSyslogInfoIterative, NULL, SyslogPrintInfoIterative,
      NULL);
     pthread_create(&threadUdpHello, NULL, UdpHello, NULL);
@@ -141,6 +118,8 @@ int main(int argc, char **argv) {
     pthread_join(threadSyslogInfoIterative, NULL);
     pthread_join(threadUdpHello, NULL);
     pthread_join(threadEmpty, NULL);
+
+    closelog();
 
     fprintf(stderr, "%s", "app finished\n");
 
