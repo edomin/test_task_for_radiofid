@@ -1,18 +1,24 @@
+#include <fcntl.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "common.h"
 
-#define SYSLOG_PRINT_ITERATIONS_COUNT 10
-#define SYSLOG_PRINT_DELAY_US         320000
-#define UDP_HELLO_SERVER_ADDRESS      "127.0.0.1"
-#define UDP_HELLO_MESSAGE             "hello"
-#define UDP_HELLO_TIMEOUT_MS          3000
+#define SYSLOG_PRINT_ITERATIONS_COUNT   10
+#define SYSLOG_PRINT_DELAY_US           320000
+#define UDP_HELLO_SERVER_ADDRESS        "127.0.0.1"
+#define UDP_HELLO_MESSAGE               "hello"
+#define UDP_HELLO_TIMEOUT_MS            3000
+#define PIPE_TO_STDOUT_PIPE_FILENAME    "/tmp/test_task_for_radiofid_pipe"
+#define PIPE_TO_STDOUT_PIPE_PERMISSIONS S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP \
+ | S_IROTH | S_IWOTH
+#define PIPE_TO_STDOUT_READ_BUFFER_LEN  1024
 
 void *SyslogPrintInfoIterative(void *unused) {
     for (int iterNum = 0; iterNum < SYSLOG_PRINT_ITERATIONS_COUNT; iterNum++) {
@@ -99,25 +105,72 @@ void *UdpHello(void *unused) {
     return NULL;
 }
 
-void *Empty(void *unused) {
+void OnReadyToReadFromFifo(int fd, void *unused) {
+    char             readBuffer[PIPE_TO_STDOUT_READ_BUFFER_LEN];
+    ssize_t          readedLen;
+
+    readedLen = read(fd, readBuffer, PIPE_TO_STDOUT_READ_BUFFER_LEN);
+    readBuffer[readedLen] = '\0';
+
+    printf("%s", readBuffer);
+}
+
+void *PipeToStdout(void *mutexFirstSecondThreadsEnd) {
+    int              fd;
+    pthread_mutex_t *pMutexFirstSecondThreadsEnd = mutexFirstSecondThreadsEnd;
+
+    unlink(PIPE_TO_STDOUT_PIPE_FILENAME);
+
+    if (mkfifo(PIPE_TO_STDOUT_PIPE_FILENAME,
+     PIPE_TO_STDOUT_PIPE_PERMISSIONS) == -1) {
+        perror("mkfifo");
+        return NULL;
+    }
+
+    fd = open(PIPE_TO_STDOUT_PIPE_FILENAME, O_RDONLY | O_NONBLOCK);
+    if (fd == -1) {
+        perror("open");
+        return NULL;
+    }
+
+    pthread_mutex_lock(pMutexFirstSecondThreadsEnd);
+
+    WaitInputAndDo(fd, -1, OnReadyToReadFromFifo, fd, NULL, NULL);
+
+    pthread_mutex_unlock(pMutexFirstSecondThreadsEnd);
+
+    close(fd);
+
     return NULL;
 }
 
 int main(int argc, char **argv) {
-    pthread_t threadSyslogInfoIterative;
-    pthread_t threadUdpHello;
-    pthread_t threadEmpty;
+    pthread_t       threadSyslogInfoIterative;
+    pthread_t       threadUdpHello;
+    pthread_t       threadPipeToStdout;
+    pthread_mutex_t mutexFirstSecondThreadsEnd;
 
     openlog("test_task_for_radiofid", LOG_CONS, LOG_USER);
+
+    if (pthread_mutex_init(&mutexFirstSecondThreadsEnd, NULL) != 0) {
+        fprintf(stderr, "%s", "pthread_mutex_init error\n");
+        return 1;
+    }
+
+    pthread_mutex_lock(&mutexFirstSecondThreadsEnd);
 
     pthread_create(&threadSyslogInfoIterative, NULL, SyslogPrintInfoIterative,
      NULL);
     pthread_create(&threadUdpHello, NULL, UdpHello, NULL);
-    pthread_create(&threadEmpty, NULL, Empty, NULL);
+    pthread_create(&threadPipeToStdout, NULL, PipeToStdout,
+     &mutexFirstSecondThreadsEnd);
 
     pthread_join(threadSyslogInfoIterative, NULL);
     pthread_join(threadUdpHello, NULL);
-    pthread_join(threadEmpty, NULL);
+    pthread_mutex_unlock(&mutexFirstSecondThreadsEnd);
+    pthread_join(threadPipeToStdout, NULL);
+
+    pthread_mutex_destroy(&mutexFirstSecondThreadsEnd);
 
     closelog();
 
