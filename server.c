@@ -8,6 +8,11 @@
 
 #define UDP_HELLO_MESSAGE "bye"
 
+typedef struct {
+    struct sockaddr_storage addr;
+    socklen_t               addrLen;
+} CliAddrData;
+
 bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
     struct addrinfo hints;
     int             getaddrInfoError;
@@ -51,31 +56,36 @@ bool PrepareSocket(int *sockFd, struct addrinfo **servinfo) {
     return true;
 }
 
+void OnReadyToRecvFromMainProgram(int sockFd, void *cliAddrData) {
+    char         recvBuffer[UDP_HELLO_RECV_BUFFER_LEN];
+    ssize_t      receivedLen;
+    CliAddrData *pCliAddrData = (CliAddrData *)cliAddrData;
+
+    receivedLen = recvfrom(sockFd, recvBuffer, UDP_HELLO_RECV_BUFFER_LEN , 0,
+     (struct sockaddr *)&pCliAddrData->addr, &pCliAddrData->addrLen);
+
+    if (receivedLen == -1)
+        perror("recvfrom");
+}
+
 int main() {
-    struct addrinfo        *servinfo;
-    int                     sockFd;
-    struct sockaddr_storage cliAddr;
-    socklen_t               cliAddrLen;
-    char                    recvBuffer[UDP_HELLO_RECV_BUFFER_LEN];
-    ssize_t                 receivedLen;
-    ssize_t                 sendToResult;
+    struct addrinfo *servinfo;
+    int              sockFd;
+    CliAddrData      cliAddrData;
+    ssize_t          sendToResult;
 
     if (!PrepareSocket(&sockFd, &servinfo)) {
         perror("PrepareSocket");
         return 1;
     }
 
-    cliAddrLen = sizeof(struct sockaddr_storage);
-    receivedLen = recvfrom(sockFd, recvBuffer, UDP_HELLO_RECV_BUFFER_LEN , 0,
-     (struct sockaddr *)&cliAddr, &cliAddrLen);
+    cliAddrData.addrLen = sizeof(struct sockaddr_storage);
 
-    if (receivedLen == -1) {
-        perror("recvfrom");
-        return 2;
-    }
+    WaitInputAndDo(sockFd, -1, OnReadyToRecvFromMainProgram,
+     sockFd, &cliAddrData, NULL);
 
     sendToResult = sendto(sockFd, UDP_HELLO_MESSAGE, strlen(UDP_HELLO_MESSAGE),
-     0, (struct sockaddr *)&cliAddr, cliAddrLen);
+     0, (struct sockaddr *)&cliAddrData.addr, cliAddrData.addrLen);
 
     if (sendToResult == -1) {
         perror("sendto");
